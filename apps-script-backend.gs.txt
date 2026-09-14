@@ -1,0 +1,131 @@
+/**
+ * Edusutram — Lead capture backend
+ * ---------------------------------
+ * What this does:
+ *   - Receives POSTs from the landing page's enquiry form and popup form
+ *   - Appends each lead as a new row in a Google Sheet
+ *   - Emails you a notification for every new lead
+ *
+ * SETUP (about 5 minutes):
+ *   1. Create a new Google Sheet (sheets.new). Leave it empty — this script
+ *      creates and formats the "Leads" tab for you on first run.
+ *   2. In that Sheet, open Extensions -> Apps Script.
+ *   3. Delete anything in Code.gs and paste in this entire file.
+ *   4. Change NOTIFY_EMAIL below to the inbox that should get lead alerts.
+ *   5. Click Deploy -> New deployment -> select type "Web app".
+ *        - Execute as: Me
+ *        - Who has access: Anyone
+ *      Click Deploy and authorize the permissions Google asks for.
+ *   6. Copy the "Web app URL" you're given.
+ *   7. In the landing page HTML, find:
+ *        var LEAD_ENDPOINT = "PASTE_YOUR_GOOGLE_APPS_SCRIPT_WEB_APP_URL_HERE";
+ *      and paste your URL in place of the placeholder string.
+ *
+ *   That's it — form submissions will now land in your Sheet and inbox.
+ *
+ * NOTE ON RE-DEPLOYING:
+ *   If you edit this script later, use Deploy -> Manage deployments -> Edit
+ *   (pencil icon) -> "New version" so the same URL keeps working. Creating a
+ *   brand-new deployment gives you a different URL and breaks the old link.
+ */
+
+var SHEET_NAME = "Leads";
+var NOTIFY_EMAIL = "sutramedu@gmail.com"; // <-- change to where you want alerts sent
+
+function doPost(e) {
+  try {
+    var data = JSON.parse(e.postData.contents);
+    var sheet = getSheet_();
+
+    sheet.appendRow([
+      new Date(),
+      data.source || "",
+      data.studentName || "",
+      data.parentName || "",
+      data.phone || "",
+      data.whatsapp || "",
+      data.email || "",
+      data.course || "",
+      data.qualification || "",
+      data.prefTime || "",
+      data.message || ""
+    ]);
+
+    sendNotification_(data);
+
+    return ContentService
+      .createTextOutput(JSON.stringify({ result: "success" }))
+      .setMimeType(ContentService.MimeType.JSON);
+
+  } catch (err) {
+    return ContentService
+      .createTextOutput(JSON.stringify({ result: "error", message: String(err) }))
+      .setMimeType(ContentService.MimeType.JSON);
+  }
+}
+
+function getSheet_() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sheet = ss.getSheetByName(SHEET_NAME);
+  if (!sheet) {
+    sheet = ss.insertSheet(SHEET_NAME);
+    sheet.appendRow([
+      "Timestamp", "Source", "Student Name", "Parent Name", "Phone",
+      "WhatsApp", "Email", "Course", "Class / Qualification",
+      "Preferred Time", "Message"
+    ]);
+    sheet.setFrozenRows(1);
+    sheet.getRange(1, 1, 1, 11).setFontWeight("bold");
+  }
+  return sheet;
+}
+
+function sendNotification_(data) {
+  try {
+    var subject = "New enquiry: " + (data.studentName || "Unnamed") +
+                  " — " + (data.course || "General enquiry");
+    var body =
+      "A new enquiry came in through the Edusutram website.\n\n" +
+      "Student: "        + (data.studentName    || "-") + "\n" +
+      "Parent: "         + (data.parentName     || "-") + "\n" +
+      "Phone: "          + (data.phone          || "-") + "\n" +
+      "WhatsApp: "       + (data.whatsapp       || "-") + "\n" +
+      "Email: "          + (data.email          || "-") + "\n" +
+      "Course: "         + (data.course         || "-") + "\n" +
+      "Class/Qualification: " + (data.qualification || "-") + "\n" +
+      "Preferred time: " + (data.prefTime       || "-") + "\n" +
+      "Message: "        + (data.message        || "-") + "\n" +
+      "Source: "         + (data.source         || "-") + "\n" +
+      "Submitted: "      + new Date();
+
+    MailApp.sendEmail(NOTIFY_EMAIL, subject, body);
+  } catch (err) {
+    // Don't let a failed email block the sheet write — the lead is already saved.
+  }
+}
+
+/**
+ * Optional: run this once manually from the Apps Script editor (select
+ * "testDoPost" in the function dropdown and click Run) to confirm the sheet
+ * and email both work before wiring up the live URL.
+ */
+function testDoPost() {
+  var fakeEvent = {
+    postData: {
+      contents: JSON.stringify({
+        studentName: "Test Student",
+        parentName: "Test Parent",
+        phone: "9999999999",
+        whatsapp: "9999999999",
+        email: "test@example.com",
+        course: "School Programs",
+        qualification: "Class 10",
+        prefTime: "Evenings",
+        message: "This is a test submission.",
+        source: "manual_test",
+        timestamp: new Date().toISOString()
+      })
+    }
+  };
+  doPost(fakeEvent);
+}
